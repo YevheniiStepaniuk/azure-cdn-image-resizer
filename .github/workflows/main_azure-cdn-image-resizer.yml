@@ -38,7 +38,7 @@ jobs:
         id: fa
         with:
           app-name: 'azure-cdn-image-resizer'
-          slot-name: 'Production'
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
 
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_6C43E447FE6848C19C89115508F3B130 }}
+
