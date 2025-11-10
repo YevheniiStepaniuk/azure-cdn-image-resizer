@@ -5,9 +5,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.IO;
-using System.Text;
 using System.Threading.Tasks;
+using System.IO.Pipelines;
+using System.Threading;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 
@@ -58,7 +60,7 @@ namespace AzureCDNImageResizer.Services
         private async Task<Stream> GetResultStreamAsync(string uri, string containerKey, ImageSize? imageSize, string output, string mode, bool isVideo = false)
         {
             // Create a BlobServiceClient object which will be used to create a container client
-            BlobServiceClient blobServiceClient = new BlobServiceClient(_config.GetConnectionString("AzureStorage"));
+            var blobServiceClient = new BlobServiceClient(_config.GetConnectionString("AzureStorage"));
 
             // get the container name            
             try
@@ -67,18 +69,21 @@ namespace AzureCDNImageResizer.Services
                 var container = blobServiceClient.GetBlobContainerClient(containerKey);
 
                 // Get a reference to a blob
-                BlobClient blobClient = container.GetBlobClient(uri);
+                var blobClient = container.GetBlobClient(uri);
 
-                // Download the blob's contents and save it to a strea
-                using (var imageStream = new MemoryStream())
+                var blobStream = await blobClient.OpenReadAsync(new BlobOpenReadOptions(allowModifications: false));
+
+                if (output == "svg" || isVideo || imageSize is null)
                 {
-                    await blobClient.DownloadToAsync(imageStream);
-                    imageStream.Position = 0;
-
-                    if (output == "svg" || isVideo) return imageStream;
-
-                    return GetResizedImage(imageStream, imageSize.Value, output, mode);
+                    return blobStream;
                 }
+
+                if (imageSize.Value.Name == ImageSize.OriginalImageSize)
+                {
+                    return blobStream;
+                }
+                
+                return CreateResizedStream(blobStream, imageSize.Value, output, mode);
             }
             catch (Exception ex)
             {
@@ -87,72 +92,47 @@ namespace AzureCDNImageResizer.Services
             }
         }
 
-
         /// <summary>
         /// Resizes/Crops image
         /// </summary>
-        /// <param name="stream"></param>
+        /// <param name="sourceStream"></param>
         /// <param name="size"></param>
         /// <param name="output"></param>
         /// <param name="mode"></param>
         /// <returns></returns>
-        private Stream GetResizedImage(Stream stream, ImageSize size, string output, string mode)
+        private Stream CreateResizedStream(Stream sourceStream, ImageSize size, string output, string mode)
         {
-            var resultStream = new MemoryStream();
+            var pipe = new Pipe();
 
-            // if we don't need to resize it, then just copy to resultStream and leave
-            if (size.Name == ImageSize.OriginalImageSize)
+            _ = Task.Run(async () =>
             {
-                stream.CopyTo(resultStream);
-                resultStream.Position = 0;
-                return resultStream;
-            }
-
-            // handle the resize
-            using (var image = Image.Load(stream))
-            {
-                var seletedMode = mode.ToLower() switch
+                try
                 {
-                    "boxpad" => ResizeMode.BoxPad,
-                    "pad" => ResizeMode.Pad,
-                    "max" => ResizeMode.Max,
-                    "min" => ResizeMode.Min,
-                    "stretch" => ResizeMode.Stretch,
-                    _ => ResizeMode.Crop
-                };
+                    using var image = await Image.LoadAsync(sourceStream);
 
-                var resizeOptions = new ResizeOptions
-                {
-                    Size = new Size(size.Width, size.Height),
-                    Mode = seletedMode
-                };
+                    ApplyResize(image, size, mode);
 
-                image.Mutate(x => x.Resize(resizeOptions));
+                    await using (var destinationStream = pipe.Writer.AsStream(true))
+                    {
+                        WriteImage(image, destinationStream, output);
+                        await destinationStream.FlushAsync(CancellationToken.None);
+                    }
 
-                // output defaults to the current filetype, but can be overridden
-                switch (output)
-                {
-                    case "jpeg":
-                    case "jpg":
-                        image.SaveAsJpeg(resultStream);
-                        break;
-                    case "gif":
-                        image.SaveAsGif(resultStream);
-                        break;
-                    case "avif":
-                    case "svg":
-                    case "webp":
-                        image.SaveAsWebp(resultStream);
-                        break;
-                    default: // png
-                        image.SaveAsPng(resultStream);
-                        break;
+                    await pipe.Writer.FlushAsync();
+                    await pipe.Writer.CompleteAsync();
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to process image stream.");
+                    await pipe.Writer.CompleteAsync(ex);
+                }
+                finally
+                {
+                    await sourceStream.DisposeAsync();
+                }
+            });
 
-                resultStream.Position = 0;
-            }
-
-            return resultStream;
+            return pipe.Reader.AsStream();
         }
 
         /// <summary>
@@ -169,20 +149,47 @@ namespace AzureCDNImageResizer.Services
             return ImageSize.Parse(value);
         }
 
-        /// <summary>
-        /// If the image is base64 encoded, convert that to a string.
-        /// </summary>
-        /// <param name="url"></param>
-        /// <returns></returns>
-        private static Uri NormalizeUrl(string url)
+        private void ApplyResize(Image image, ImageSize size, string mode)
         {
-            var targetUrl = url;
-            if (url.StartsWith("base64:", StringComparison.InvariantCultureIgnoreCase))
+            var selectedMode = (mode ?? string.Empty).ToLowerInvariant() switch
             {
-                targetUrl = Encoding.UTF8.GetString(Convert.FromBase64String(url.Substring(7)));
-            }
+                "boxpad" => ResizeMode.BoxPad,
+                "pad" => ResizeMode.Pad,
+                "max" => ResizeMode.Max,
+                "min" => ResizeMode.Min,
+                "stretch" => ResizeMode.Stretch,
+                _ => ResizeMode.Crop
+            };
 
-            return new Uri(targetUrl.StartsWith(Uri.UriSchemeHttp) ? targetUrl : (Uri.UriSchemeHttp + Uri.SchemeDelimiter + targetUrl));
+            var resizeOptions = new ResizeOptions
+            {
+                Size = new Size(size.Width, size.Height),
+                Mode = selectedMode
+            };
+
+            image.Mutate(x => x.Resize(resizeOptions));
+        }
+
+        private void WriteImage(Image image, Stream outputStream, string output)
+        {
+            switch (output)
+            {
+                case "jpeg":
+                case "jpg":
+                    image.SaveAsJpeg(outputStream);
+                    break;
+                case "gif":
+                    image.SaveAsGif(outputStream);
+                    break;
+                case "avif":
+                case "svg":
+                case "webp":
+                    image.SaveAsWebp(outputStream);
+                    break;
+                default: // png
+                    image.SaveAsPng(outputStream);
+                    break;
+            }
         }
     }
 }
