@@ -39,6 +39,7 @@ jobs:
         with:
           app-name: 'azure-cdn-image-resizer'
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
-
+          sku: flexconsumption
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_6C43E447FE6848C19C89115508F3B130 }}
+
 
