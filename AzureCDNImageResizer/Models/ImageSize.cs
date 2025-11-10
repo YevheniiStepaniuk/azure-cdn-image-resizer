@@ -5,7 +5,7 @@ namespace AzureCDNImageResizer.Models
 {
     public readonly struct ImageSize
     {
-        private static Regex ImageSizeRegex = new Regex(@"(?<Width>\d+)x(?<Height>\d+)", RegexOptions.Compiled);
+        private static readonly Regex ImageSizeRegex = new Regex(@"(?<Width>\d+)x(?<Height>\d+)", RegexOptions.Compiled);
 
         public const string OriginalImageSize = "0x0";
 

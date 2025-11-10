@@ -4,10 +4,8 @@ using AzureCDNImageResizer.Extensions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Headers;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using System.Collections.Generic;
 using System.Net;
@@ -15,23 +13,19 @@ using System.Threading.Tasks;
 using AzureCDNImageResizer.Services;
 using AzureCDNImageResizer.Options;
 using Microsoft.Net.Http.Headers;
-using System.IO;
 
 namespace AzureCDNImageResizer.Functions
 {
 	public class ImageResizeFunction
 	{
-        private readonly IImageResizerService imageResizerService;
-        private readonly IOptions<ClientCacheOptions> clientCacheOptions;
-        private readonly IConfiguration config;
+        private readonly IImageResizerService _imageResizerService;
+        private readonly IOptions<ClientCacheOptions> _clientCacheOptions;
 
         public ImageResizeFunction(IImageResizerService imageProxyService,
-            IOptions<ClientCacheOptions> clientCacheOptions,
-            IConfiguration configuration)
+            IOptions<ClientCacheOptions> clientCacheOptions)
         {
-            this.imageResizerService = imageProxyService;
-            this.clientCacheOptions = clientCacheOptions;
-            config = configuration;
+            _imageResizerService = imageProxyService;
+            _clientCacheOptions = clientCacheOptions;
         }
 
         [FunctionName("ResizeImage")]
@@ -93,7 +87,7 @@ namespace AzureCDNImageResizer.Functions
                 var isVideo = videoOutputs.Contains(output);
                 
                 // try to resize the image
-                var imageStream = await this.imageResizerService.ResizeAsync(url, container, size, output, mode, isVideo);
+                var imageStream = await _imageResizerService.ResizeAsync(url, container, size, output, mode, isVideo);
 
                 if (imageStream == null)
                     return new NotFoundResult();
@@ -117,12 +111,12 @@ namespace AzureCDNImageResizer.Functions
                 };
 
                 // set cache 
-                this.SetCacheHeaders(req.HttpContext.Response.GetTypedHeaders());
+                SetCacheHeaders(req.HttpContext.Response.GetTypedHeaders());
 
                 // return the stream
                 return new FileStreamResult(imageStream, mimeType);
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 return new BadRequestResult();
             }
@@ -132,29 +126,7 @@ namespace AzureCDNImageResizer.Functions
         {
             responseHeaders.CacheControl = new CacheControlHeaderValue { Public = true };
             responseHeaders.LastModified = new DateTimeOffset(new DateTime(1900, 1, 1));
-            responseHeaders.Expires = new DateTimeOffset((DateTime.Now + this.clientCacheOptions.Value.MaxAge).ToUniversalTime());
-        }
-
-        private static string GetContentType(string fileExtension)
-        {
-            switch (fileExtension.ToLower())
-            {
-                case ".jpg":
-                case ".jpeg":
-                    return "image/jpeg";
-                case ".png":
-                    return "image/png";
-                case ".gif":
-                    return "image/gif";
-                case ".webp":
-                    return "image/webp";
-                case ".css":
-                    return "text/css";
-                case ".js":
-                    return "application/javascript";
-                default:
-                    return "application/octet-stream";
-            }
+            responseHeaders.Expires = new DateTimeOffset((DateTime.Now + _clientCacheOptions.Value.MaxAge).ToUniversalTime());
         }
     }
 }

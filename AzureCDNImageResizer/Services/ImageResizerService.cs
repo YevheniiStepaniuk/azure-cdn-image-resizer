@@ -5,7 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.IO;
-using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using Azure.Storage.Blobs;
@@ -16,20 +15,18 @@ namespace AzureCDNImageResizer.Services
 {
     public class ImageResizerService : IImageResizerService
     {
-        private readonly HttpClient httpClient;
-        private readonly IOptions<ImageResizerOptions> settings;
-        private readonly ILogger logger;
-        private readonly IConfiguration config;
+        private readonly IOptions<ImageResizerOptions> _settings;
+        private readonly ILogger _logger;
+        private readonly IConfiguration _config;
 
-        public ImageResizerService(HttpClient httpClient,
+        public ImageResizerService(
             IOptions<ImageResizerOptions> settings,
             IConfiguration configuration,
             ILogger<ImageResizerService> logger)
         {
-            this.httpClient = httpClient;
-            this.settings = settings;
-            this.logger = logger;
-            config = configuration;
+            _settings = settings;
+            _config = configuration;
+            _logger = logger;
         }
 
         /// <summary>
@@ -39,10 +36,12 @@ namespace AzureCDNImageResizer.Services
         /// <param name="size"></param>
         /// <param name="output"></param>
         /// <param name="mode"></param>
+        /// <param name="containerKey"></param>
+        /// <param name="isVideo"></param>
         /// <returns></returns>
-        public async Task<Stream> ResizeAsync(string url, string containerkey, string size, string output, string mode, bool isVideo = false)
+        public async Task<Stream> ResizeAsync(string url, string containerKey, string size, string output, string mode, bool isVideo = false)
         {
-            return await this.GetResultStreamAsync(url, containerkey, !isVideo ? StringToImageSize(size) : null, output, mode, isVideo);
+            return await GetResultStreamAsync(url, containerKey, !isVideo ? StringToImageSize(size) : null, output, mode, isVideo);
         }
 
 
@@ -53,20 +52,19 @@ namespace AzureCDNImageResizer.Services
         /// <param name="imageSize"></param>
         /// <param name="output"></param>
         /// <param name="mode"></param>
+        /// <param name="containerKey"></param>
+        /// <param name="isVideo"></param>
         /// <returns></returns>
-        private async Task<Stream> GetResultStreamAsync(string uri, string containerkey, ImageSize? imageSize, string output, string mode, bool isVideo = false)
+        private async Task<Stream> GetResultStreamAsync(string uri, string containerKey, ImageSize? imageSize, string output, string mode, bool isVideo = false)
         {
             // Create a BlobServiceClient object which will be used to create a container client
-            BlobServiceClient blobServiceClient = new BlobServiceClient(config.GetConnectionString("AzureStorage"));
+            BlobServiceClient blobServiceClient = new BlobServiceClient(_config.GetConnectionString("AzureStorage"));
 
             // get the container name            
-            string containerName = config.GetValue<string>($"{containerkey}Container");
-
             try
             {
-                // Create the container and return a container client object
-                var container = blobServiceClient.GetBlobContainerClient(containerName);
-                await container.CreateIfNotExistsAsync();
+                // Create the container and return a container client object 
+                var container = blobServiceClient.GetBlobContainerClient(containerKey);
 
                 // Get a reference to a blob
                 BlobClient blobClient = container.GetBlobClient(uri);
@@ -84,7 +82,7 @@ namespace AzureCDNImageResizer.Services
             }
             catch (Exception ex)
             {
-                string message = ex.Message;
+                _logger.LogError(ex, "Failed to resize image");
                 return null;
             }
         }
@@ -93,7 +91,7 @@ namespace AzureCDNImageResizer.Services
         /// <summary>
         /// Resizes/Crops image
         /// </summary>
-        /// <param name="originalStream"></param>
+        /// <param name="stream"></param>
         /// <param name="size"></param>
         /// <param name="output"></param>
         /// <param name="mode"></param>
@@ -164,8 +162,7 @@ namespace AzureCDNImageResizer.Services
         /// <returns></returns>
         private ImageSize StringToImageSize(string value)
         {
-            ImageSize imageSize;
-            if (this.settings.Value.PredefinedImageSizes.TryGetValue(value.ToLowerInvariant(), out imageSize))
+            if (_settings.Value.PredefinedImageSizes.TryGetValue(value.ToLowerInvariant(), out var imageSize))
             {
                 return imageSize;
             }

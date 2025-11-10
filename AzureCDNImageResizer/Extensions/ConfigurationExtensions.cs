@@ -1,5 +1,4 @@
-﻿using System;
-using System.Linq;
+﻿using System.Linq;
 using Microsoft.Azure.WebJobs.Host.Bindings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,10 +24,10 @@ namespace AzureCDNImageResizer.Extensions
                 services.Remove(descriptor);
             }
 
-            var executioncontextoptions = services.BuildServiceProvider()
+            var options = services.BuildServiceProvider()
                 .GetService<IOptions<ExecutionContextOptions>>().Value;
 
-            var currentDirectory = executioncontextoptions.AppDirectory;
+            var currentDirectory = options.AppDirectory;
 
             var config = new ConfigurationBuilder()
                 .SetBasePath(currentDirectory)

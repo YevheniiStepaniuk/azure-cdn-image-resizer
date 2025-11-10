@@ -6,11 +6,11 @@ namespace AzureCDNImageResizer.Options
 {
     public class ImageResizerOptions
     {
-        public string SmallSize { get; set; }
+        public string SmallSize { get; set; } = "200x200";
 
-        public string MediumSize { get; set; }
+        public string MediumSize { get; set; } = "500x500";
 
-        public string HeroSize { get; set; }
+        public string HeroSize { get; set; } = "1200x600";
 
         public IDictionary<string, ImageSize> PredefinedImageSizes
         {

@@ -6,12 +6,12 @@ namespace AzureCDNImageResizer.Extensions
         internal static int ToInt(this string s)
         {
             if (string.IsNullOrEmpty(s))
-                return default(int);
+                return 0;
 
             if (int.TryParse(s, out var i))
                 return i;
 
-            return default(int);
+            return 0;
         }
 
         internal static string ToSuffix(this string s)
@@ -19,7 +19,7 @@ namespace AzureCDNImageResizer.Extensions
             if (string.IsNullOrEmpty(s))
                 return string.Empty;
 
-            return s.Substring(s.LastIndexOf(".") + 1);
+            return s[(s.LastIndexOf('.') + 1)..];
         }
     }
 }
