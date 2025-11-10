@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy dotnet core project to Azure Function App - azure-cdn-image-resizer
+name: Build and deploy dotnet core app to Azure Function App - azure-cdn-image-resizer
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: 'Resolve Project Dependencies Using Dotnet'
-        shell: bash
+        shell: pwsh
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
           dotnet build --configuration Release --output ./output
@@ -38,8 +38,6 @@ jobs:
         id: fa
         with:
           app-name: 'azure-cdn-image-resizer'
+          slot-name: 'Production'
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
-          sku: flexconsumption
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_6C43E447FE6848C19C89115508F3B130 }}
-
-
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_EB021458BEB04B28B4490BA4D42A17A7 }}
